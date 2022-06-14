@@ -24,7 +24,7 @@ function call() {
   var attachEffect = null
   // track muti effect
   var effectStack = []
-  function effect(fn) {
+  function effect(fn, options = {}) {
     const effectFn = () => {
       clean(effectFn)
       attachEffect = effectFn
@@ -35,6 +35,7 @@ function call() {
       attachEffect = effectStack[effectStack.length - 1]
     }
     effectFn.deps = []
+    effectFn.options = options
     effectFn()
   }
 
@@ -85,9 +86,32 @@ function call() {
       newDeps.forEach(effectFn => {
         // console.log(newDeps, effectFn)
         console.log('effectFn', effectFn === attachEffect)
-        effectFn()
+        if (effectFn !== attachEffect) {
+          if (effectFn.options.scheduler) {
+            effectFn.options.scheduler(effectFn)
+          } else {
+            effectFn()
+          }
+        }
       })
     }
+  }
+
+  var jobQueue = new Set()
+
+  var p = Promise.resolve()
+
+  let isFlushing = false
+  function flushJob() {
+    if (isFlushing) {
+      return
+    }
+    isFlushing = true
+    p.then(() => {
+      jobQueue.forEach(job => job())
+    }).finally(() => {
+      isFlushing = false
+    })
   }
 
   var data = {
@@ -113,32 +137,44 @@ function call() {
   })
 
   effect(function effect1() {
-    console.log('first')
-    effect(function effect2() {
-      console.log('second')
-      num = obj.count
-    })
-    text = obj.text
-  })
-  console.log(bucket)
+    // obj.count = obj.count + 1
+    console.log(obj.count)
+    // console.log('first')
+    // effect(function effect2() {
+    //   console.log('second')
+    //   obj.count = obj.count + 1
+    // })
+    // text = obj.text
+  },
+    // {
+    //   scheduler(fn) {
+    //     // setTimeout(fn, 0)
+    //     jobQueue.add(fn)
+    //     flushJob()
+    //   }
+    // }
+  )
+  obj.count++
+  obj.count++
+  console.log('end')
 
   // setTimeout(() => {
   //   obj.ok = false
   // }, 1000)
 
-  setTimeout(() => {
-    console.log(2000)
-    obj.text = 'change now'
-  }, 1000)
+  // setTimeout(() => {
+  //   console.log(2000)
+  //   obj.text = 'change now'
+  // }, 1000)
+
+  // // setTimeout(() => {
+  // //   obj.ok = true
+  // // }, 3000)
 
   // setTimeout(() => {
-  //   obj.ok = true
-  // }, 3000)
-
-  setTimeout(() => {
-    console.log(2000)
-    obj.count = 4
-  }, 2000)
+  //   console.log(2000)
+  //   obj.count = 4
+  // }, 2000)
 
 }
 

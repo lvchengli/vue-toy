@@ -8,6 +8,7 @@ a simple toy vue
 - [x] trigger when proxy find data set exec
 - [x] clean effect dep before effect exec
 - [x] add muti effect track
+- [x] add scheduler to custom effect exec (ex: delay and combine effect)
 
 ## note
 
