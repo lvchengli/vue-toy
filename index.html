@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Toy Vue</title>
+</head>
+<body>
+  <button id="button">call Again</button>
+  <div id="div"></div>
+<script>
+var button = document.querySelector('#button')
+var div = document.querySelector('#div')
+var num = 0
+var text = ''
+button.addEventListener('click', call)
+
+// function log() {
+//   console.log(...arguments)
+// }
+
+function call() {
+  var attachEffect = null
+  // track muti effect
+  var effectStack = []
+  function effect(fn) {
+    const effectFn = () => {
+      clean(effectFn)
+      attachEffect = effectFn
+      effectStack.push(effectFn)
+      fn()
+      effectStack.pop()
+      // 执行完代码后，把active还给outer effect
+      attachEffect = effectStack[effectStack.length - 1]
+    }
+    effectFn.deps = []
+    effectFn()
+  }
+
+  function clean(effectFn) {
+    console.log('before clean', effectFn.deps)
+    // effectFn.deps.forEach(item => {
+    //   item.delete(effectFn)
+    // })
+    
+    for (let index = 0; index < effectFn.deps.length; index++) {
+      const element = effectFn.deps[index];
+      element.delete(effectFn)
+    }
+    console.log('after clean', effectFn.deps)
+    effectFn.deps.length = 0
+  }
+
+  function track(obj, prop) {
+    console.log('track', `Object[${prop}] = ${obj[prop]}`)
+    if (!attachEffect) {
+      return
+    }
+    var depsMap = bucket.get(obj)
+    if (!depsMap) {
+      bucket.set(obj, depsMap = new Map())
+    }
+    var deps = depsMap.get(prop)
+    if (!deps) {
+      depsMap.set(prop, deps = new Set())
+    }
+    deps.add(attachEffect)
+    console.log('attachEffect', prop, deps)
+    attachEffect.deps.push(deps)
+  }
+
+  function trigger(obj, prop, value) {
+    console.log('trigger', `Object[${prop}] = ${value}`)
+    var target = bucket.get(obj)
+    if (!target) {
+      return
+    }
+    var deps = target.get(prop)
+    if (deps) {
+      // effect()
+      // clean 依赖
+      var newDeps = new Set(deps)
+      
+      newDeps.forEach(effectFn => {
+        // console.log(newDeps, effectFn)
+        console.log('effectFn', effectFn === attachEffect)
+        effectFn()
+      })
+    }
+  }
+
+  var data = {
+    text: 'hello vue',
+    ok: true,
+    count: 2,
+  }
+
+  // 
+  var bucket = new WeakMap()
+
+
+  var obj = new Proxy(data, {
+    // 收集依赖
+    get: function(obj, prop) {
+      track(obj, prop)
+      return obj[prop]
+    },
+    set: function(obj, prop, value) {
+      obj[prop] = value
+      trigger(obj, prop, value)
+    },
+  })
+
+  effect(function effect1() {
+    console.log('first')
+    effect(function effect2() {
+      console.log('second')
+      num = obj.count
+    })
+    text = obj.text
+  })
+  console.log(bucket)
+
+  // setTimeout(() => {
+  //   obj.ok = false
+  // }, 1000)
+
+  setTimeout(() => {
+    console.log(2000)
+    obj.text = 'change now'
+  }, 1000)
+
+  // setTimeout(() => {
+  //   obj.ok = true
+  // }, 3000)
+
+  setTimeout(() => {
+    console.log(2000)
+    obj.count = 4
+  }, 2000)
+
+}
+
+call()
+
+</script>
+</body>
+</html>
