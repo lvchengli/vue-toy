@@ -29,18 +29,22 @@ function call() {
       clean(effectFn)
       attachEffect = effectFn
       effectStack.push(effectFn)
-      fn()
+      var res = fn()
       effectStack.pop()
       // 执行完代码后，把active还给outer effect
       attachEffect = effectStack[effectStack.length - 1]
+      return res
     }
     effectFn.deps = []
     effectFn.options = options
-    effectFn()
+    if (!options.lazy) {
+      effectFn()
+    }
+    return effectFn
   }
 
   function clean(effectFn) {
-    console.log('before clean', effectFn.deps)
+    // console.log('before clean', effectFn.deps)
     // effectFn.deps.forEach(item => {
     //   item.delete(effectFn)
     // })
@@ -49,12 +53,12 @@ function call() {
       const element = effectFn.deps[index];
       element.delete(effectFn)
     }
-    console.log('after clean', effectFn.deps)
+    // console.log('after clean', effectFn.deps)
     effectFn.deps.length = 0
   }
 
   function track(obj, prop) {
-    console.log('track', `Object[${prop}] = ${obj[prop]}`)
+    // console.log('track', `Object[${prop}] = ${obj[prop]}`)
     if (!attachEffect) {
       return
     }
@@ -67,12 +71,12 @@ function call() {
       depsMap.set(prop, deps = new Set())
     }
     deps.add(attachEffect)
-    console.log('attachEffect', prop, deps)
+    // console.log('attachEffect', prop, deps)
     attachEffect.deps.push(deps)
   }
 
   function trigger(obj, prop, value) {
-    console.log('trigger', `Object[${prop}] = ${value}`)
+    // console.log('trigger', `Object[${prop}] = ${value}`)
     var target = bucket.get(obj)
     if (!target) {
       return
@@ -85,7 +89,8 @@ function call() {
       
       newDeps.forEach(effectFn => {
         // console.log(newDeps, effectFn)
-        console.log('effectFn', effectFn === attachEffect)
+        // console.log('effectFn', effectFn === attachEffect)
+        // 不要在执行周期内
         if (effectFn !== attachEffect) {
           if (effectFn.options.scheduler) {
             effectFn.options.scheduler(effectFn)
@@ -136,9 +141,46 @@ function call() {
     },
   })
 
+  function computed(getter) {
+    var value
+    var dirty = true
+    
+    var effectFn = effect(getter, {
+      lazy: true,
+      scheduler () {
+        if (!dirty) {
+          dirty = true
+          trigger(obj, 'value')
+        }
+      },
+    })
+
+    var obj = {
+      get value() {
+        if (dirty) {
+          value = effectFn()
+          dirty = false
+        }
+        track(obj, 'value')
+        return value
+      }
+    }
+    return obj
+  }
+  var result = computed(function effect1() {
+    console.log('call effect', obj.count)
+    return obj.count + 0
+  })
+
+  effect(() => {
+    console.log('another effect', result.value)
+  })
+
   effect(function effect1() {
     // obj.count = obj.count + 1
-    console.log(obj.count)
+    console.log('call effect', obj.count)
+    // obj.count = obj.count + 1
+    return obj.count
     // console.log('first')
     // effect(function effect2() {
     //   console.log('second')
@@ -146,17 +188,25 @@ function call() {
     // })
     // text = obj.text
   },
-    // {
-    //   scheduler(fn) {
-    //     // setTimeout(fn, 0)
-    //     jobQueue.add(fn)
-    //     flushJob()
-    //   }
-    // }
+    {
+      lazy: true,
+      // scheduler(fn) {
+      //   // setTimeout(fn, 0)
+      //   jobQueue.add(fn)
+      //   flushJob()
+      // },
+    }
   )
+  console.log('get computed result', result.value)
   obj.count++
   obj.count++
+  obj.count++
+  obj.count++
+  console.log('get computed result', result.value)
   console.log('end')
+
+  // effectItem()
+  // console.log(effectItem())
 
   // setTimeout(() => {
   //   obj.ok = false
