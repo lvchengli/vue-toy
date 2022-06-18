@@ -12,6 +12,8 @@ a simple toy vue
 - [x] add scheduler to custom effect exec (ex: delay and combine effect)
 - [x] add computed to lazy compute effectFn, store computed in WeakMap, store value in Map.
 - [x] add watch, which can watch obj's modify or a getter function trigger, calc newValue and oldValue, pass to cb.
+- [x] add immediate option to watch's third param, can trigger cb immediately.
+- [x] add onInvalidate param on watch cb's third param, can tell old watch's cb there is a new trigger so it's invalidate now.
 
 ## note
 

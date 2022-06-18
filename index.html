@@ -170,7 +170,7 @@ function call() {
 
   // 如果obj数据有变动，则callback执行
   // 假设是obj.count 变动
-  function watch(source, callback) {
+  function watch(source, callback, options = {}) {
     // 遍历obj，触发每一层级的get
     function traverse(value, seed = new Set()) {
       console.log('traverse value', value)
@@ -195,31 +195,101 @@ function call() {
 
     let oldVal, newVal
 
-    effect(getter, {
-      scheduler() {
+    var cleanup
+
+    function onInvalidate(fn) {
+      cleanup = fn
+    }
+
+    const job = () => {
+      if (cleanup) {
+        cleanup()
+      }
+      newVal = effectFn()
+      callback(newVal, oldVal, onInvalidate)
+      oldVal = newVal
+    }
+
+    const effectFn = effect(getter, {
+      lazy: true,
+      scheduler(cb) {
         // oldVal ,val
-        newVal = getter()
-        console.log('newVal', newVal)
-        if (oldVal !== newVal) {
-          callback(newVal, oldVal)
-          oldVal = newVal
+        if (options.flush === 'post') {
+          var p = Promise.resolve()
+          p.then(job)
+        } else {
+          job()
         }
-        
       }
     })
+
+    if (options.immediate) {
+      job()
+    } else {
+      oldVal = effectFn()
+    }
   }
 
   // watch(obj, () => {console.log('watch trigger')})
 
   
-  watch(obj.count, (newVal, oldVal) => {console.log(`watch trigger oldVal: ${oldVal}, newVal: ${newVal}`)})
+  // watch(() => {
+  //   console.log('call getter')
+  //   // obj.count++
+  //   return obj.ok ? obj.count : 'null'
+  // }, (newVal, oldVal) => {console.log(`watch trigger oldVal: ${oldVal}, newVal: ${newVal}`)}, {
+  //   // immediate: true
+  //   flush: 'post'
+  // })
 
-  console.log('before modify')
+  // console.log('before modify')
+  // obj.count++
+  // console.log('after modify')
+  var arr = [1000, 400, 500]
+  var i = 0
+  watch(
+    () => obj.count,
+    async(newVal, oldVal, onInvalidate) => {
+      let expired = false
+
+      var target = arr[i]
+
+      setTimeout(() => {
+        if (!expired) {
+          console.log('bingo', target)
+        }
+      }, target)
+      
+      if (i < 2) {
+        i++
+      }
+
+      onInvalidate(() => {
+        expired = true
+      })
+    },
+  )
+
   obj.count++
-  console.log('after modify')
-  console.log('before modify')
-  obj.count = obj.count
-  console.log('after modify')
+
+  setTimeout(() => {
+    obj.count++
+    setTimeout(() => {
+      obj.count++
+    }, 500)
+  }, 100)
+
+  // console.log('before modify')
+  // obj.ok = false
+  // console.log('after modify')
+
+  // console.log('before modify')
+  // obj.count++
+  // console.log('after modify')
+
+  // console.log('before modify')
+  // obj.ok = true
+  // console.log('after modify')
   // computed demo start
 /* 
   var result = computed(function effect1() {
