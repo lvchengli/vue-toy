@@ -144,7 +144,7 @@ function call() {
   function computed(getter) {
     var value
     var dirty = true
-    
+
     var effectFn = effect(getter, {
       lazy: true,
       scheduler () {
@@ -167,6 +167,61 @@ function call() {
     }
     return obj
   }
+
+  // 如果obj数据有变动，则callback执行
+  // 假设是obj.count 变动
+  function watch(source, callback) {
+    // 遍历obj，触发每一层级的get
+    function traverse(value, seed = new Set()) {
+      console.log('traverse value', value)
+      // 避免循环依赖
+      if (typeof value !== 'object' || value === null || seed.has(value)) {
+        return
+      }
+      seed.add(value)
+      for (const key in value) {
+        traverse(value[key], seed)
+      }
+      return value
+      console.log(seed)
+    }
+    
+    let getter
+    if (typeof source === 'function') {
+      getter = source
+    } else {
+      getter = () => traverse(source)
+    }
+
+    let oldVal, newVal
+
+    effect(getter, {
+      scheduler() {
+        // oldVal ,val
+        newVal = getter()
+        console.log('newVal', newVal)
+        if (oldVal !== newVal) {
+          callback(newVal, oldVal)
+          oldVal = newVal
+        }
+        
+      }
+    })
+  }
+
+  // watch(obj, () => {console.log('watch trigger')})
+
+  
+  watch(obj.count, (newVal, oldVal) => {console.log(`watch trigger oldVal: ${oldVal}, newVal: ${newVal}`)})
+
+  console.log('before modify')
+  obj.count++
+  console.log('after modify')
+  console.log('before modify')
+  obj.count = obj.count
+  console.log('after modify')
+  // computed demo start
+/* 
   var result = computed(function effect1() {
     console.log('call effect', obj.count)
     return obj.count + 0
@@ -204,9 +259,10 @@ function call() {
   obj.count++
   console.log('get computed result', result.value)
   console.log('end')
+ */
+  // computed demo end
 
-  // effectItem()
-  // console.log(effectItem())
+  
 
   // setTimeout(() => {
   //   obj.ok = false

@@ -11,6 +11,7 @@ a simple toy vue
 - [x] add muti effect track
 - [x] add scheduler to custom effect exec (ex: delay and combine effect)
 - [x] add computed to lazy compute effectFn, store computed in WeakMap, store value in Map.
+- [x] add watch, which can watch obj's modify or a getter function trigger, calc newValue and oldValue, pass to cb.
 
 ## note
 
