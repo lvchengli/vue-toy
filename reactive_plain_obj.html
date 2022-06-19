@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Toy Vue</title>
+</head>
+<body>
+  <button id="button">call Again</button>
+  <div id="div"></div>
+<script>
+var button = document.querySelector('#button')
+var div = document.querySelector('#div')
+var num = 0
+var text = ''
+button.addEventListener('click', call)
+
+// function log() {
+//   console.log(...arguments)
+// }
+
+function call() {
+  var attachEffect = null
+  // track muti effect
+  var effectStack = []
+  function effect(fn, options = {}) {
+    const effectFn = () => {
+      clean(effectFn)
+      attachEffect = effectFn
+      effectStack.push(effectFn)
+      var res = fn()
+      effectStack.pop()
+      // 执行完代码后，把active还给outer effect
+      attachEffect = effectStack[effectStack.length - 1]
+      return res
+    }
+    effectFn.deps = []
+    effectFn.options = options
+    if (!options.lazy) {
+      effectFn()
+    }
+    return effectFn
+  }
+
+  function clean(effectFn) {
+    // console.log('before clean', effectFn.deps)
+    // effectFn.deps.forEach(item => {
+    //   item.delete(effectFn)
+    // })
+    
+    for (let index = 0; index < effectFn.deps.length; index++) {
+      const element = effectFn.deps[index];
+      element.delete(effectFn)
+    }
+    // console.log('after clean', effectFn.deps)
+    effectFn.deps.length = 0
+  }
+
+  function track(obj, prop) {
+    // console.log('track', `Object[${prop}] = ${obj[prop]}`)
+    if (!attachEffect) {
+      return
+    }
+    var depsMap = bucket.get(obj)
+    if (!depsMap) {
+      bucket.set(obj, depsMap = new Map())
+    }
+    var deps = depsMap.get(prop)
+    if (!deps) {
+      depsMap.set(prop, deps = new Set())
+    }
+    deps.add(attachEffect)
+    // console.log('attachEffect', prop, deps)
+    attachEffect.deps.push(deps)
+  }
+
+  function trigger(obj, prop, type) {
+    // console.log('trigger', `Object[${prop}] = ${value}`)
+    var depsMap = bucket.get(obj)
+    if (!depsMap) {
+      return
+    }
+
+    var effects = depsMap.get(prop)
+    
+    var effectsToRun = new Set()
+    
+    if (type === 'ADD' || type === 'DELETE') {
+      var iterateEffects = depsMap.get(ITERATE_KEY)
+      iterateEffects && iterateEffects.forEach(effectFn => {
+        effectFn !== attachEffect && effectsToRun.add(effectFn)
+      })
+    }
+
+    effects && effects.forEach(effectFn => {
+      effectFn !== attachEffect && effectsToRun.add(effectFn)
+    })
+
+    effectsToRun.forEach(effectFn => {
+      if (effectFn.options.scheduler) {
+        effectFn.options.scheduler(effectFn)
+      } else {
+        effectFn()
+      }
+    })
+  }
+
+  var jobQueue = new Set()
+
+  var p = Promise.resolve()
+
+  let isFlushing = false
+  function flushJob() {
+    if (isFlushing) {
+      return
+    }
+    isFlushing = true
+    p.then(() => {
+      jobQueue.forEach(job => job())
+    }).finally(() => {
+      isFlushing = false
+    })
+  }
+
+  var bucket = new WeakMap()
+
+  function computed(getter) {
+    var value
+    var dirty = true
+
+    var effectFn = effect(getter, {
+      lazy: true,
+      scheduler () {
+        if (!dirty) {
+          dirty = true
+          trigger(obj, 'value')
+        }
+      },
+    })
+
+    var obj = {
+      get value() {
+        if (dirty) {
+          value = effectFn()
+          dirty = false
+        }
+        track(obj, 'value')
+        return value
+      }
+    }
+    return obj
+  }
+
+  // 如果obj数据有变动，则callback执行
+  // 假设是obj.count 变动
+  function watch(source, callback, options = {}) {
+    // 遍历obj，触发每一层级的get
+    function traverse(value, seed = new Set()) {
+      console.log('traverse value', value)
+      // 避免循环依赖
+      if (typeof value !== 'object' || value === null || seed.has(value)) {
+        return
+      }
+      seed.add(value)
+      for (const key in value) {
+        traverse(value[key], seed)
+      }
+      return value
+      console.log(seed)
+    }
+    
+    let getter
+    if (typeof source === 'function') {
+      getter = source
+    } else {
+      getter = () => traverse(source)
+    }
+
+    let oldVal, newVal
+
+    var cleanup
+
+    function onInvalidate(fn) {
+      cleanup = fn
+    }
+
+    const job = () => {
+      if (cleanup) {
+        cleanup()
+      }
+      newVal = effectFn()
+      callback(newVal, oldVal, onInvalidate)
+      oldVal = newVal
+    }
+
+    const effectFn = effect(getter, {
+      lazy: true,
+      scheduler(cb) {
+        // oldVal ,val
+        if (options.flush === 'post') {
+          var p = Promise.resolve()
+          p.then(job)
+        } else {
+          job()
+        }
+      }
+    })
+
+    if (options.immediate) {
+      job()
+    } else {
+      oldVal = effectFn()
+    }
+  }
+
+  var ITERATE_KEY = Symbol()
+
+  function createReactive(data, isShallow = false, isReadOnly = false) {
+    return new Proxy(data, {
+      // 收集依赖
+      get (target, key, receiver) {
+        // console.log('get target', key)
+        if (key === 'raw') {
+          return target
+        }
+        if (!isReadOnly) {
+          track(target, key)
+        }
+        var res = Reflect.get(target, key, receiver)
+        if (isShallow) {
+          return res
+        }
+        if (typeof res === 'object' && res !== null) {
+          return isReadOnly ? readOnly(res) : reactive(res)
+        }
+        return res
+      },
+      set (target, key, newVal, receiver) {
+        if (isReadOnly) {
+          console.warn(`属性 ${key} 是只读的`)
+          return true
+        }
+        
+        const oldVal = target[key]
+        // console.log('target === obj, target === data', target === obj, target === data)
+        const type = Object.prototype.hasOwnProperty.call(target, key) ? 'SET' : 'ADD'
+        
+        const res = Reflect.set(target, key, newVal, receiver)
+        console.log('target === receiver.raw', target === receiver.raw)
+        if (target === receiver.raw) {
+          if (oldVal !== newVal && (oldVal === oldVal || newVal === newVal)) {
+            trigger(target, key, type)
+          }
+        }
+        return res
+      },
+      deleteProperty(target, key) {
+        if (isReadOnly) {
+          console.warn(`属性 ${key} 是只读的`)
+          return true
+        }
+        const hasKey = Object.prototype.hasOwnProperty.call(target, key)
+        const res = Reflect.deleteProperty(target, key)
+        if (hasKey && res) {
+          trigger(target, key, 'DELETE')
+        }
+        return res
+      },
+      has (target, key) {
+        track(target, key)
+        return Reflect.has(target, key)
+      },
+      ownKeys (target) {
+        track(target, ITERATE_KEY)
+        return Reflect.ownKeys(target)
+      }
+    })
+  }
+
+  function reactive(data) {
+    return createReactive(data)
+  }
+
+  function shallowReactive(data) {
+    return createReactive(data, true)
+  }
+
+  function readOnly(data) {
+    return createReactive(data, false, true)
+  }
+
+  function shallowReadOnly(data) {
+    return createReactive(data, true, true)
+  }
+
+  // 深浅响应 start
+  var obj = reactive({foo: {bar: 2}})
+  effect(() => {
+    console.log(obj.foo.bar)
+  })
+  obj.foo.bar = 3
+
+  // 深浅响应 end
+
+  // 原型更新优化 start
+  /* 
+  var obj = {foo: 1}
+  var proto = {bar: 2}
+  var child = reactive(obj)
+  var parent = reactive(proto)
+  Object.setPrototypeOf(child, parent)
+  effect(() => {
+    console.log(child.bar)
+  })
+  child.bar = 3
+
+  console.log(child.raw === obj)
+  console.log(parent.raw === proto)
+ */
+  // 原型更新优化 start
+
+
+  // console.log(parent.bar)
+  // parent.bar = 3
+
+  // 原始值 start
+  /* 
+  var data = {
+    foo: 1,
+    // get bar() {
+    //   return this.foo
+    // },
+    // set bar(val) {
+    //   this.foo = val
+    // }
+  }
+
+  // var obj = reactive(data)
+
+  effect(() => {
+    // console.log('foo' in obj)
+    for (const key in obj) {
+      console.log(`obj[${key}]: ${obj[key]}`)
+    }
+  })
+  
+  obj.foo++
+  obj.ok = true
+  obj.ok = NaN
+  obj.ok = NaN
+   */
+  // 原始值 end
+
+  // watch demo start
+  /* 
+  var arr = [1000, 400, 500]
+  var i = 0
+  watch(
+    () => obj.count,
+    async(newVal, oldVal, onInvalidate) => {
+      let expired = false
+
+      var target = arr[i]
+
+      setTimeout(() => {
+        if (!expired) {
+          console.log('bingo', target)
+        }
+      }, target)
+      
+      if (i < 2) {
+        i++
+      }
+
+      onInvalidate(() => {
+        expired = true
+      })
+    },
+  )
+
+  obj.count++
+
+  setTimeout(() => {
+    obj.count++
+    setTimeout(() => {
+      obj.count++
+    }, 500)
+  }, 100)
+   */
+  // watch demo end
+
+  // computed demo start
+  /* 
+  var result = computed(function effect1() {
+    console.log('call effect', obj.count)
+    return obj.count + 0
+  })
+
+  effect(() => {
+    console.log('another effect', result.value)
+  })
+
+  effect(function effect1() {
+    // obj.count = obj.count + 1
+    console.log('call effect', obj.count)
+    // obj.count = obj.count + 1
+    return obj.count
+    // console.log('first')
+    // effect(function effect2() {
+    //   console.log('second')
+    //   obj.count = obj.count + 1
+    // })
+    // text = obj.text
+  },
+    {
+      lazy: true,
+      // scheduler(fn) {
+      //   // setTimeout(fn, 0)
+      //   jobQueue.add(fn)
+      //   flushJob()
+      // },
+    }
+  )
+  console.log('get computed result', result.value)
+  obj.count++
+  obj.count++
+  obj.count++
+  obj.count++
+  console.log('get computed result', result.value)
+  console.log('end')
+ */
+  // computed demo end
+}
+
+call()
+
+</script>
+</body>
+</html>
